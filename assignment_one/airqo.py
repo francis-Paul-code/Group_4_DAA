@@ -49,7 +49,7 @@ def lowest_pm2_5(measurements: List[Measurement]) -> Measurement:
 
 
 def above_average_pm2_5() -> List[Measurement]:
-    return list(filter(lambda m: m["pm2_5"] > average_pm2_5(measurements), measurements))
+    return list(filter((lambda m: m["pm2_5"] > average_pm2_5(measurements)), measurements))
 
 
 def month_pm2_dict():
@@ -58,6 +58,7 @@ def month_pm2_dict():
     for mnt in measurements:
         months[mnt["month"]] = mnt["pm2_5"]
 
+    print(f"PM2.5 Dict: {months} \n")
     month = input("Enter a month to retrieve the PM2.5 Concentration: ")
 
     while month.lower() not in [m.lower() for m in months.keys()]:
