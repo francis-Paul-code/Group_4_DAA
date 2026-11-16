@@ -1,7 +1,6 @@
 
 #include <stdio.h>
 #include "algorithms.h"
-#include "datastructures.h"
 #include "gtk_gui.h"
 
 int main(int argc, char **argv) {
