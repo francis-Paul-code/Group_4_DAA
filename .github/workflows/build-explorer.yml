@@ -10,11 +10,11 @@ on:
 
 jobs:
   build:
-    name: Build Windows x64
+    name: Build and package Windows x64
     runs-on: windows-latest
 
     outputs:
-      artifact_url: ${{ steps.windows_artifact.outputs.artifact-url }}
+      artifact_url: ${{ steps.upload.outputs.artifact-url }}
 
     steps:
       - name: Check out source
@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install compiler, CMake, and GTK 4
+      - name: Install compiler and GTK runtime
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -32,30 +32,72 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
 
-      - name: Configure and build
+      - name: Compile application
         shell: msys2 {0}
         run: |
-          set -e
+          set -euo pipefail
+
           cmake -S . -B build-win -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/dist"
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/dist/bin"
+
           cmake --build build-win --parallel
 
-      - name: Upload Windows executable
-        id: windows_artifact
+          # Fail here if the project wrote its executable somewhere else.
+          compgen -G 'dist/bin/*.exe' > /dev/null
+
+      - name: Bundle GTK DLLs and runtime resources
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          # Use DLLs from the same UCRT64 installation that built the app.
+          cp -L "$MINGW_PREFIX"/bin/*.dll dist/bin/
+
+          # Preserve GTK's runtime layout relative to bin/.
+          for dir in \
+            etc/fonts \
+            etc/gtk-4.0 \
+            lib/gdk-pixbuf-2.0 \
+            lib/gio/modules \
+            lib/gtk-4.0 \
+            libexec \
+            share/fontconfig \
+            share/glib-2.0/schemas \
+            share/gtk-4.0 \
+            share/icons \
+            share/licenses \
+            share/locale
+          do
+            if [[ -d "$MINGW_PREFIX/$dir" ]]; then
+              mkdir -p "dist/$dir"
+              cp -RL "$MINGW_PREFIX/$dir/." "dist/$dir/"
+            fi
+          done
+
+          glib-compile-schemas dist/share/glib-2.0/schemas
+
+          # Catch an incomplete GTK bundle before publishing it.
+          test -f dist/bin/libgtk-4-1.dll
+          test -f dist/share/glib-2.0/schemas/gschemas.compiled
+
+      - name: Upload portable application
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: algorithm-explorer-windows-x64
-          path: dist/*.exe
+          path: dist/
           if-no-files-found: error
 
       - name: Add download link to workflow summary
         shell: bash
         env:
-          ARTIFACT_URL: ${{ steps.windows_artifact.outputs.artifact-url }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
-          echo "[Download Algorithm Explorer for Windows x64 (.zip)]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download Algorithm Explorer for Windows x64]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Extract the ZIP, open bin, and run the application.' >> "$GITHUB_STEP_SUMMARY"
 
   comment-on-pr:
     name: Post download link to PR
@@ -69,7 +111,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Comment with artifact link
+      - name: Comment with download link
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -77,4 +119,4 @@ jobs:
           ARTIFACT_URL: ${{ needs.build.outputs.artifact_url }}
         run: |
           gh pr comment "$PR_NUMBER" --repo "$REPO" \
-            --body "Windows x64 build ready. [Download Algorithm Explorer (.zip)]($ARTIFACT_URL)"
+            --body "Windows x64 build ready. [Download the portable ZIP]($ARTIFACT_URL), extract it, then open the application inside the bin folder."
