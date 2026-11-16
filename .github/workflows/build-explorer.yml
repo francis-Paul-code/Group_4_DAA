@@ -10,12 +10,20 @@ on:
 
 jobs:
   build:
+    name: Build Windows x64
     runs-on: windows-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    outputs:
+      artifact_url: ${{ steps.windows_artifact.outputs.artifact-url }}
 
-      - uses: msys2/setup-msys2@v2
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install compiler, CMake, and GTK 4
+        uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           install: >-
@@ -25,14 +33,48 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-gtk4
 
-      - name: Compile
+      - name: Configure and build
         shell: msys2 {0}
         run: |
-          cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/dist"
-          cmake --build build-win
+          set -e
+          cmake -S . -B build-win -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/dist"
+          cmake --build build-win --parallel
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows executable
+        id: windows_artifact
+        uses: actions/upload-artifact@v4
         with:
           name: algorithm-explorer-windows-x64
           path: dist/*.exe
           if-no-files-found: error
+
+      - name: Add download link to workflow summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.windows_artifact.outputs.artifact-url }}
+        run: |
+          echo "[Download Algorithm Explorer for Windows x64 (.zip)]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+
+  comment-on-pr:
+    name: Post download link to PR
+    needs: build
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Comment with artifact link
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ARTIFACT_URL: ${{ needs.build.outputs.artifact_url }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --body "Windows x64 build ready. [Download Algorithm Explorer (.zip)]($ARTIFACT_URL)"
