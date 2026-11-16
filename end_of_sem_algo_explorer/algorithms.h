@@ -9,12 +9,15 @@ typedef struct {
     void (*action)(GtkWidget *workspace);
 } Algorithm;
 
-typedef struct {
-    char *name;
-    struct {
-        char *name; void (*action)(void*);
-    } *operations;
-} Datastructure;
+#define print_any(x) _Generic((x), \
+int:     printf("%d", *(int *){x}), \
+float:   printf("%f", *(float*){x}), \
+double:  printf("%lf", (x)), \
+char *:  printf("%s", *(char *)(x)), \
+int *:   printf("%d", *(int *)(x)), \
+float *: printf("%f", *(float *)(x)), \
+default: printf("%p", (void *)(x)) \
+)
 
 // array algorithms
 void binary_search(GtkWidget *workspace );
