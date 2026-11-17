@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stddef.h>
+#include <gtk/gtk.h>
 
 typedef void *Any;
 
@@ -40,18 +40,21 @@ Any get(List *list, int index);
 Any remove_at_index(List *list, int index);
 void clear(List *list);
 void printList(List *list);
+void draw_list(cairo_t *cr, int width, int height, const void *state);
 
 // Stack
 Stack *create_stack(size_t inital_capacity);
 Any s_peek(Stack *stack);
 Any s_pop(Stack *stack);
 void s_clear(Stack *stack);
+void draw_stack(cairo_t *cr, int width, int height, const void *state);
 
 // Queue
 Queue *create_queue(size_t inital_capacity);
 Any dequeue(Queue *q);
 void enqueue(Queue *q, Any item);
 Any q_peek(Queue *q);
+void draw_queue(cairo_t *cr, int width, int height, const void *state);
 
 // Graph
 
@@ -71,6 +74,8 @@ Vertex* add_edge(Vertex* v, Edge* e);
 void traverse(Vertex *v);
 void print_graph(Vertex *v);
 void clear_graph(Vertex *v);
+void draw_graph(cairo_t *cr, int width, int height, const void *state);
+
 
 // Tree - each node owns its children, but borrows its data.
 typedef struct Tree Tree;
@@ -86,3 +91,4 @@ Tree *remove_child(Tree *parent, int index); // transfers ownership to caller
 void traverse_tree(Tree *tree);
 void print_tree(Tree *tree);
 void clear_tree(Tree *tree);
+void draw_tree(cairo_t *cr, int width, int height, const void *state);
