@@ -2,7 +2,7 @@
 
 const char *const algorithm_info[] = {
     "Compares adjacent values and swaps them when they are out of order.\n"
-    "Time: O(n²) for this implementation. Extra space: O(1).",
+    "Time: O(n²) best, average, and worst. Extra space: O(1). Canvas redraw: O(n) per step.",
 
     "Builds a sorted prefix by shifting larger values to make room for each new value.\n"
     "Time: O(n) best, O(n²) average and worst. Extra space: O(1).",
@@ -14,7 +14,10 @@ const char *const algorithm_info[] = {
     "Time: O((V + E) log V) with an adjacency list and a binary heap.",
 
     "Finds a route of minimum total weight between vertices.\n"
-    "Complexity depends on the algorithm used."
+    "Complexity depends on the algorithm used.",
+
+    "Examines one midpoint per step in an ascending array.\n"
+    "Time: O(log n). Extra space: O(1). Canvas redraw: O(n) per step."
 };
 
 // ---------------- Components ----------------
@@ -64,6 +67,12 @@ static GtkWidget *data_input(ExplorerUI *ui) {
     gtk_entry_set_placeholder_text(GTK_ENTRY(ui->input), "64, 28, 85, 16, 47, 103, 28, 55");
     field(component, "Input data", ui->input);
     append(component, label("Enter the data for your experiment.", "dim-label"));
+    ui->target_field = box(8);
+    ui->target = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(ui->target), "e.g. 47");
+    field(ui->target_field, "Search target", ui->target);
+    append(component, ui->target_field);
+    gtk_widget_set_visible(ui->target_field, FALSE);
     ui->apply = gtk_button_new_with_label("Apply data / Reset");
     append(component, ui->apply);
     return component;
@@ -90,16 +99,32 @@ static GtkWidget *playback(ExplorerUI *ui) {
 static void on_algorithm_changed(GtkDropDown *dropdown, GParamSpec *pspec,
                                  gpointer data)
 {
+    (void)pspec;
     ExplorerUI *ui = data;
     guint index = gtk_drop_down_get_selected(dropdown);
 
     if (index < G_N_ELEMENTS(algorithm_info))
         gtk_label_set_text(GTK_LABEL(ui->info), algorithm_info[index]);
+    gtk_widget_set_visible(ui->target_field, index == 5);
+    g_clear_handle_id(&ui->timer_id, g_source_remove);
+    ui->run.advance = NULL;
+    ui->run.done = true;
+    gtk_widget_set_sensitive(ui->step, FALSE);
+    gtk_label_set_text(GTK_LABEL(ui->status),
+                       "Selection changed. Apply data to initialize the algorithm.");
 }
 
 static void update_metrics(ExplorerUI *ui)
 {
     char text[32];
+    int count = 0;
+
+    if (ui->run.advance == n_bubble_step)
+        count = ui->bubble.count;
+    else if (ui->run.advance == n_binary_search_step)
+        count = ui->binary_search.count;
+    g_snprintf(text, sizeof text, "%d", count);
+    gtk_label_set_text(GTK_LABEL(ui->size), text);
 
     g_snprintf(text, sizeof text, "%" G_GUINT64_FORMAT, ui->run.operations);
     gtk_label_set_text(GTK_LABEL(ui->operations), text);
@@ -205,6 +230,17 @@ static void on_step_clicked(GtkButton *button, gpointer data)
     ui->run.advance(&ui->run);
     update_metrics(ui);
 
+    if (ui->run.advance == n_binary_search_step && ui->run.done) {
+        if (ui->binary_search.found >= 0) {
+            char *message = g_strdup_printf("Found %d at index %d.",
+                ui->binary_search.target, ui->binary_search.found);
+            gtk_label_set_text(GTK_LABEL(ui->status), message);
+            g_free(message);
+        } else {
+            gtk_label_set_text(GTK_LABEL(ui->status), "Target not found.");
+        }
+    }
+
     gtk_widget_queue_draw(ui->canvas);
     gtk_widget_set_sensitive(GTK_WIDGET(button), !ui->run.done);
 }
@@ -219,35 +255,37 @@ static void set_run(ExplorerUI *ui, Step run, DrawAlgorithm draw)
     gtk_widget_queue_draw(ui->canvas);
 }
 
-void draw_bubble(cairo_t *cr, int width, int height, const void *state)
+static void draw_array_bars(cairo_t *cr, int width, int height,
+                            const int *values, int count, int compared,
+                            gboolean highlight_pair)
 {
-    const BubbleState *s = state;
-    if (s->count == 0 || width <= 24 || height <= 40) return;
+    if (count <= 0 || width <= 24 || height <= 40) return;
 
     // Find the range. Including zero also supports negative values.
     double min = 0, max = 0;
-    for (int i = 0; i < s->count; i++) {
-        min = MIN(min, s->values[i]);
-        max = MAX(max, s->values[i]);
+    for (int i = 0; i < count; i++) {
+        min = MIN(min, values[i]);
+        max = MAX(max, values[i]);
     }
 
     double chart_height = height - 40.0;  // Leave room for labels.
     double scale = (max > min) ? chart_height / (max - min) : 0;
     double baseline = 12 + max * scale;
-    double slot = (width - 24.0) / s->count;
+    double slot = (width - 24.0) / count;
 
     cairo_set_font_size(cr, 14);
 
-    for (int i = 0; i < s->count; i++) {
+    for (int i = 0; i < count; i++) {
         double center = 12 + (i + 0.5) * slot;
-        double tip = baseline - s->values[i] * scale;
+        double tip = baseline - values[i] * scale;
         double bar_width = slot * 0.7;
 
         // Draw the bar between zero and its value.
         cairo_set_source_rgb(cr, 0.20, 0.55, 0.85);
         cairo_rectangle(cr, center - bar_width / 2, MIN(tip, baseline),
                         bar_width, MAX(tip, baseline) - MIN(tip, baseline));
-        if (s->compared >= 0 && (i == s->compared || i == s->compared + 1)) {
+        if (compared >= 0 &&
+            (i == compared || (highlight_pair && i == compared + 1))) {
             cairo_fill_preserve(cr);                // Fill blue and keep the rectangle.
             cairo_set_source_rgb(cr, 0.75, 0.25, 0.05);
             cairo_set_line_width(cr, 3);
@@ -258,7 +296,7 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
 
         // Center the value beneath the bar.
         char text[16];
-        g_snprintf(text, sizeof text, "%d", s->values[i]);
+        g_snprintf(text, sizeof text, "%d", values[i]);
 
         cairo_text_extents_t ext;
         cairo_text_extents(cr, text, &ext);
@@ -268,10 +306,53 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
     }
 }
 
+void draw_bubble(cairo_t *cr, int width, int height, const void *state)
+{
+    const BubbleState *s = state;
+    draw_array_bars(cr, width, height, s->values, s->count, s->compared, TRUE);
+}
+
+void draw_binary_search(cairo_t *cr, int width, int height, const void *state)
+{
+    const BinarySearchState *s = state;
+    draw_array_bars(cr, width, height, s->values, s->count, s->compared, FALSE);
+}
+
+static int parse_search_target(GtkWidget *entry, int *target)
+{
+    char *text = g_strdup(gtk_editable_get_text(GTK_EDITABLE(entry)));
+    gint64 value;
+
+    gboolean valid = g_ascii_string_to_signed(g_strstrip(text), 10,
+                                               G_MININT, G_MAXINT,
+                                               &value, NULL);
+    g_free(text);
+    if (!valid)
+        return 0;
+
+    *target = (int)value;
+    return 1;
+}
+
 static void on_apply_clicked(GtkButton *button, gpointer data)
 {
     ExplorerUI *ui = data;
+    guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
     const char *text = gtk_editable_get_text(GTK_EDITABLE(ui->input));
+
+    g_clear_handle_id(&ui->timer_id, g_source_remove);
+
+    if (gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->structure)) != 0) {
+        gtk_label_set_text(GTK_LABEL(ui->status),
+                           "Bubble Sort and Binary Search currently require the Array structure.");
+        return;
+    }
+
+    if (selected != 0 && selected != 5) {
+        gtk_label_set_text(GTK_LABEL(ui->status),
+                           "This algorithm is not implemented yet.");
+        return;
+    }
 
     // Use the displayed default if the user entered only spaces or nothing.
     while (g_ascii_isspace(*text)) text++;
@@ -296,25 +377,57 @@ static void on_apply_clicked(GtkButton *button, gpointer data)
     }
     g_strfreev(parts);
 
+    int target = 0;
+    if (selected == 5) {
+        if (!parse_search_target(ui->target, &target)) {
+            gtk_label_set_text(GTK_LABEL(ui->status),
+                               "Enter a whole-number search target.");
+            g_free(values);
+            return;
+        }
+        for (int i = 1; i < count; i++) {
+            if (values[i - 1] > values[i]) {
+                gtk_label_set_text(GTK_LABEL(ui->status),
+                                   "Binary Search requires ascending input.");
+                g_free(values);
+                return;
+            }
+        }
+    }
+
     // Keep the array alive for drawing and stepping. Apply replaces the old one.
     g_object_set_data_full(G_OBJECT(button), "values", values, g_free);
-    g_clear_handle_id(&ui->timer_id, g_source_remove);
 
-    ui->bubble = (BubbleState){
-        .values = values, .count = count, .end = count - 1, .compared = -1
-    };
-    ui->run = (Step){
-        .state = &ui->bubble,
-        .advance = n_bubble_step,
-        .done = count < 2
-    };
+    if (selected == 0) {
+        ui->bubble = (BubbleState){
+            .values = values, .count = count, .end = count - 1, .compared = -1
+        };
+        set_run(ui, (Step){
+            .state = &ui->bubble,
+            .advance = n_bubble_step,
+            .done = count < 2
+        }, draw_bubble);
+    } else {
+        ui->binary_search = (BinarySearchState){
+            .values = values,
+            .count = count,
+            .target = target,
+            .low = 0,
+            .high = count,
+            .compared = -1,
+            .found = -1
+        };
+        set_run(ui, (Step){
+            .state = &ui->binary_search,
+            .advance = n_binary_search_step,
+            .done = count == 0
+        }, draw_binary_search);
+    }
+
     update_metrics(ui);
-    ui->draw = draw_bubble;
-
-    gtk_label_set_text(GTK_LABEL(ui->status), "Data loaded.");
-    gtk_widget_set_visible(ui->placeholder, FALSE);
-    gtk_widget_set_sensitive(ui->step, !ui->run.done);
-    gtk_widget_queue_draw(ui->canvas);
+    gtk_label_set_text(GTK_LABEL(ui->status),
+        selected == 0 ? "Data loaded. Each step compares one adjacent pair."
+                      : "Data loaded. Each step examines one midpoint.");
 }
 
 static gboolean autoplay_tick(gpointer data)

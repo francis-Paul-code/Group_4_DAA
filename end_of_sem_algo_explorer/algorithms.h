@@ -1,6 +1,8 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 typedef void* Any;
 
@@ -45,12 +47,25 @@ void quick_sort(GtkWidget *workspace );
 typedef struct {
     int *values;
     int count;
-    int compared;  // Left index of the last pair compared
-    int i;      // Left index of the next pair
-    int end;    // Last index in this pass
+    int compared; // Left index of the last pair compared
+    int i;        // Left index of the next pair
+    int end;      // Last index in this pass
 } BubbleState;
 void n_bubble_step(Step *run);
-static void draw_bubble(cairo_t *cr, int width, int height, const void *state);
+void draw_bubble(cairo_t *cr, int width, int height, const void *state);
+
+typedef struct {
+    int *values;
+    int count;
+    int target;
+    int low;       // Inclusive lower bound
+    int high;      // Exclusive upper bound
+    int compared;  // Index examined by the last step
+    int found;     // Matching index, or -1
+} BinarySearchState;
+void n_binary_search_step(Step *run);
+void draw_binary_search(cairo_t *cr, int width, int height,
+                        const void *state);
 
 void bubble_sort(GtkWidget *workspace );
 void merge_sort(GtkWidget *workspace );
