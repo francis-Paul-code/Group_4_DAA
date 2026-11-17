@@ -13,8 +13,6 @@ const char *const algorithm_info[] = {
     "Finds shortest paths from a starting vertex in a graph with nonnegative edge weights.\n"
     "Time: O((V + E) log V) with an adjacency list and a binary heap.",
 
-    "Finds a route of minimum total weight between vertices.\n"
-    "Complexity depends on the algorithm used."
 };
 
 // ---------------- Components ----------------
@@ -87,9 +85,9 @@ static GtkWidget *playback(ExplorerUI *ui) {
     return component;
 }
 
+
 static void on_algorithm_changed(GtkDropDown *dropdown, GParamSpec *pspec,
-                                 gpointer data)
-{
+                                 gpointer data) {
     ExplorerUI *ui = data;
     guint index = gtk_drop_down_get_selected(dropdown);
 
@@ -97,8 +95,7 @@ static void on_algorithm_changed(GtkDropDown *dropdown, GParamSpec *pspec,
         gtk_label_set_text(GTK_LABEL(ui->info), algorithm_info[index]);
 }
 
-static void update_metrics(ExplorerUI *ui)
-{
+static void update_metrics(ExplorerUI *ui) {
     char text[32];
 
     g_snprintf(text, sizeof text, "%" G_GUINT64_FORMAT, ui->run.operations);
@@ -106,6 +103,23 @@ static void update_metrics(ExplorerUI *ui)
 
     g_snprintf(text, sizeof text, "%" G_GUINT64_FORMAT, ui->run.comparisons);
     gtk_label_set_text(GTK_LABEL(ui->comparisons), text);
+}
+
+static void show_structure(ExplorerUI *ui,
+                           DrawAlgorithm draw,
+                           const void *structure) {
+    g_clear_handle_id(&ui->timer_id, g_source_remove);
+
+    ui->draw = draw;
+    ui->draw_data = structure;
+
+    gtk_widget_set_sensitive(ui->start, FALSE);
+    gtk_widget_set_sensitive(ui->stop, FALSE);
+    gtk_widget_set_sensitive(ui->step, FALSE);
+    gtk_widget_set_sensitive(ui->speed, FALSE);
+
+    gtk_widget_set_visible(ui->placeholder, FALSE);
+    gtk_widget_queue_draw(ui->canvas);
 }
 
 static GtkWidget *metrics(ExplorerUI *ui) {
@@ -154,7 +168,7 @@ static GtkWidget *panel(ExplorerUI *ui) {
     append(component, label("EXPERIMENT SETUP", "dim-label"));
     append(component, label("Algorithm explorer", "title-2"));
     const char *structures[] = {"Array", "List", "Stack", "Queue", "Graph", "Tree", NULL};
-    const char *algorithms[] = {"Bubble Sort", "Insertion Sort", "Quick Sort", "Djikstra's Algorithm", "Shortest Path", NULL};
+    const char *algorithms[] = {"Bubble Sort", "Insertion Sort", "Quick Sort", "Djikstra's Algorithm", NULL};
     append(component, selector("Data structure", structures, &ui->structure));
     append(component, selector("Algorithm", algorithms, &ui->algorithm));
 
@@ -171,56 +185,66 @@ static GtkWidget *panel(ExplorerUI *ui) {
 
 // Screen composition
 
-GtkWidget *explorer_screen(ExplorerUI *ui) {
-    GtkWidget *split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_start_child(GTK_PANED(split), workspace(ui));
-    GtkWidget *scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), panel(ui));
-    gtk_paned_set_end_child(GTK_PANED(split), scroll);
-    gtk_paned_set_position(GTK_PANED(split), 800);
-    gtk_paned_set_shrink_start_child(GTK_PANED(split), FALSE);
-    gtk_paned_set_shrink_end_child(GTK_PANED(split), FALSE);
-    gtk_paned_set_resize_end_child(GTK_PANED(split), FALSE);
-    return split;
-}
-
-static void draw_canvas(GtkDrawingArea *area, cairo_t *cr,
-                        int width, int height, gpointer data)
+//Stacks
+void draw_stack(cairo_t *cr, int width, int height, const void *data)
 {
-    (void)area;
-    ExplorerUI *ui = data;
+    const Stack *stack = data;
+    const List *list = stack->base;
 
-    if (ui->draw)
-        ui->draw(cr, width, height, ui->run.state);
-}
 
-static void on_step_clicked(GtkButton *button, gpointer data)
-{
-    ExplorerUI *ui = data;
-
-    if (!ui->run.advance || ui->run.done)
+    if (!list || list->size == 0)
         return;
 
-    ui->run.advance(&ui->run);
-    update_metrics(ui);
+    double box_width = MIN(160.0, width * 0.5);
+    double box_height = MIN(45.0, (height - 60.0) / list->size);
 
-    gtk_widget_queue_draw(ui->canvas);
-    gtk_widget_set_sensitive(GTK_WIDGET(button), !ui->run.done);
+    if (box_height <= 0)
+        return;
+
+    double x = (width - box_width) / 2.0;
+    double top = (height - box_height * list->size) / 2.0;
+
+    cairo_set_font_size(cr, MIN(18.0, box_height * 0.5));
+
+    for (int i = 0; i < list->size; i++) {
+        int value = *(int *)get(list,i);
+        double y = top + (list->size - 1 - i) * box_height;
+
+        cairo_rectangle(cr, x, y, box_width, box_height);
+        cairo_set_source_rgb(cr, 0.20, 0.55, 0.85);
+        cairo_fill_preserve(cr);
+
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_set_line_width(cr, 1);
+        cairo_stroke(cr);
+
+        char text[32];
+        g_snprintf(text, sizeof text, "%d", value);
+
+        cairo_text_extents_t ext;
+        cairo_text_extents(cr, text, &ext);
+        cairo_move_to(cr,
+            x + (box_width - ext.width) / 2 - ext.x_bearing,
+            y + (box_height - ext.height) / 2 - ext.y_bearing);
+        cairo_show_text(cr, text);
+    }
+
+    cairo_set_font_size(cr, 14);
+    cairo_move_to(cr, x, top - 10);
+    cairo_show_text(cr, "TOP");
 }
 
-static void set_run(ExplorerUI *ui, Step run, DrawAlgorithm draw)
+static void setup_stack(ExplorerUI *ui)
 {
-    ui->run = run;
-    ui->draw = draw;
-
-    gtk_widget_set_visible(ui->placeholder, FALSE);
-    gtk_widget_set_sensitive(ui->step, !run.done);
-    gtk_widget_queue_draw(ui->canvas);
+    if (!ui->input_data)
+        return;
+    show_structure(ui, draw_stack, ui->input_data);
 }
 
-void draw_bubble(cairo_t *cr, int width, int height, const void *state)
-{
+// Graphs
+
+// Bubble Sort
+void draw_bubble(cairo_t *cr, int width, int height, const void *state) {
     const BubbleState *s = state;
     if (s->count == 0 || width <= 24 || height <= 40) return;
 
@@ -231,7 +255,7 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
         max = MAX(max, s->values[i]);
     }
 
-    double chart_height = height - 40.0;  // Leave room for labels.
+    double chart_height = height - 40.0; // Leave room for labels.
     double scale = (max > min) ? chart_height / (max - min) : 0;
     double baseline = 12 + max * scale;
     double slot = (width - 24.0) / s->count;
@@ -248,10 +272,10 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
         cairo_rectangle(cr, center - bar_width / 2, MIN(tip, baseline),
                         bar_width, MAX(tip, baseline) - MIN(tip, baseline));
         if (s->compared >= 0 && (i == s->compared || i == s->compared + 1)) {
-            cairo_fill_preserve(cr);                // Fill blue and keep the rectangle.
+            cairo_fill_preserve(cr); // Fill blue and keep the rectangle.
             cairo_set_source_rgb(cr, 0.75, 0.25, 0.05);
             cairo_set_line_width(cr, 3);
-            cairo_stroke(cr);                       // Outline the same rectangle.
+            cairo_stroke(cr); // Outline the same rectangle.
         } else {
             cairo_fill(cr);
         }
@@ -268,6 +292,7 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
     }
 }
 
+<<<<<<< HEAD
 void draw_insertion(cairo_t *cr, int width, int height, const void *state)
 {
     const InsertionState *s = state;
@@ -283,34 +308,16 @@ static void on_apply_clicked(GtkButton *button, gpointer data)
 {
     ExplorerUI *ui = data;
     const char *text = gtk_editable_get_text(GTK_EDITABLE(ui->input));
+=======
+static void setup_bubble(ExplorerUI *ui) {
+    List * input = ui->input_data;
+    if (!ui->input_data || input->size == 0)
+        return;
+>>>>>>> 1815cf2b24fce62bc300f9045caff88973387ae8
 
-    // Use the displayed default if the user entered only spaces or nothing.
-    while (g_ascii_isspace(*text)) text++;
-    if (*text == '\0')
-        text = gtk_entry_get_placeholder_text(GTK_ENTRY(ui->input));
-
-    gchar **parts = g_strsplit(text, ",", -1);
-    int count = (int)g_strv_length(parts);
-    int *values = g_new(int, count);
-
-    for (int i = 0; i < count; i++) {
-        gint64 value;
-        if (!g_ascii_string_to_signed(g_strstrip(parts[i]), 10,
-                                      G_MININT, G_MAXINT, &value, NULL)) {
-            gtk_label_set_text(GTK_LABEL(ui->status),
-                               "Enter integers separated by commas, e.g. 5, 2, 4.");
-            g_strfreev(parts);
-            g_free(values);
-            return;
-                                      }
-        values[i] = (int)value;
-    }
-    g_strfreev(parts);
-
-    // Keep the array alive for drawing and stepping. Apply replaces the old one.
-    g_object_set_data_full(G_OBJECT(button), "values", values, g_free);
     g_clear_handle_id(&ui->timer_id, g_source_remove);
 
+<<<<<<< HEAD
     guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
 
     if (selected == 0) {
@@ -345,15 +352,179 @@ static void on_apply_clicked(GtkButton *button, gpointer data)
     }
 
     update_metrics(ui);
+=======
+    int count = input->size;
+    int *values = g_new(int, count);
 
-    gtk_label_set_text(GTK_LABEL(ui->status), "Data loaded.");
-    gtk_widget_set_visible(ui->placeholder, FALSE);
+    for (int i = 0; i < count; i++)
+        values[i] = *(int *) get(ui->input_data, i);
+
+    g_object_set_data_full(G_OBJECT(ui->canvas),
+                           "bubble-values", values, g_free);
+
+    ui->bubble = (BubbleState){
+        .values = values,
+        .count = count,
+        .end = count - 1,
+        .compared = -1
+    };
+
+    ui->run = (Step){
+        .state = &ui->bubble,
+        .advance = n_bubble_step,
+        .done = count < 2
+    };
+>>>>>>> 1815cf2b24fce62bc300f9045caff88973387ae8
+
+    ui->draw = draw_bubble;
+    ui->draw_data = &ui->bubble;
+
+    update_metrics(ui);
+
+    gtk_widget_set_sensitive(ui->start, !ui->run.done);
     gtk_widget_set_sensitive(ui->step, !ui->run.done);
+    gtk_widget_set_sensitive(ui->stop, TRUE);
+    gtk_widget_set_visible(ui->placeholder, FALSE);
     gtk_widget_queue_draw(ui->canvas);
 }
 
-static gboolean autoplay_tick(gpointer data)
+
+
+GtkWidget *explorer_screen(ExplorerUI *ui) {
+    GtkWidget *split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_paned_set_start_child(GTK_PANED(split), workspace(ui));
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), panel(ui));
+    gtk_paned_set_end_child(GTK_PANED(split), scroll);
+    gtk_paned_set_position(GTK_PANED(split), 800);
+    gtk_paned_set_shrink_start_child(GTK_PANED(split), FALSE);
+    gtk_paned_set_shrink_end_child(GTK_PANED(split), FALSE);
+    gtk_paned_set_resize_end_child(GTK_PANED(split), FALSE);
+    return split;
+}
+
+static void draw_canvas(GtkDrawingArea *area, cairo_t *cr,
+                        int width, int height, gpointer data) {
+    ExplorerUI *ui = data;
+
+    if (ui->draw && ui->draw_data)
+        ui->draw(cr, width, height, ui->draw_data);
+}
+
+
+static void set_run(ExplorerUI *ui, Step run, DrawAlgorithm draw) {
+    ui->run = run;
+    ui->draw = draw;
+
+    gtk_widget_set_visible(ui->placeholder, FALSE);
+    gtk_widget_set_sensitive(ui->step, !run.done);
+    gtk_widget_queue_draw(ui->canvas);
+}
+
+
+// event listeners
+static void on_step_clicked(GtkButton *button, gpointer data) {
+    ExplorerUI *ui = data;
+
+    if (!ui->run.advance || ui->run.done)
+        return;
+
+    ui->run.advance(&ui->run);
+    update_metrics(ui);
+
+    gtk_widget_queue_draw(ui->canvas);
+    gtk_widget_set_sensitive(GTK_WIDGET(button), !ui->run.done);
+}
+
+static void on_apply_clicked(GtkButton *button, gpointer data)
 {
+    ExplorerUI *ui = data;
+
+    const char *text = gtk_editable_get_text(GTK_EDITABLE(ui->input));
+
+    while (g_ascii_isspace(*text))
+        text++;
+
+    if (*text == '\0')
+        text = gtk_entry_get_placeholder_text(GTK_ENTRY(ui->input));
+
+    char **parts = g_strsplit(text, ",", -1);
+    int count = g_strv_length(parts);
+
+    // Validate before replacing the saved input.
+    for (int i = 0; i < count; i++) {
+        gint64 value;
+
+        if (!g_ascii_string_to_signed(g_strstrip(parts[i]), 10,
+                                      G_MININT, G_MAXINT, &value, NULL)) {
+            gtk_label_set_text(GTK_LABEL(ui->status),
+                               "Enter integers separated by commas.");
+            g_strfreev(parts);
+            return;
+                                      }
+    }
+
+    guint structure =
+    gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->structure));
+
+    guint algorithm =
+        gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
+
+    if (structure == 2) { // Stack
+
+        if (!ui->input_data)
+            ui->input_data = create_stack(count);
+        else
+            clear( ui->input_data);
+
+        for (int i = 0; i < count; i++) {
+            int value = (int)g_ascii_strtoll(parts[i], NULL, 10);
+            push(&value, ((Stack*)ui->input_data)->base, sizeof value);
+        }
+
+        g_strfreev(parts);
+
+        gtk_label_set_text(GTK_LABEL(ui->status), "Input saved.");
+        Stack *stack = ui->input_data;
+        setup_stack(ui);
+    } else if (structure == 1) { // Queue
+        if (!ui->input_data)
+            ui->input_data = create_queue(count);
+        else
+            clear(ui->input_data);
+
+        for (int i = 0; i < count; i++) {
+            int value = (int)g_ascii_strtoll(parts[i], NULL, 10);
+            enqueue( ui->input_data, &value);
+        }
+
+        g_strfreev(parts);
+
+        gtk_label_set_text(GTK_LABEL(ui->status), "Input saved.");
+
+        // handle queue callback
+    }
+    else if (structure == 0 || algorithm == 0) {
+        if (!ui->input_data)
+            ui->input_data = create_list(count);
+        else
+            clear(ui->input_data);
+
+        for (int i = 0; i < count; i++) {
+            int value = (int)g_ascii_strtoll(parts[i], NULL, 10);
+            push(&value, ui->input_data, sizeof value);
+        }
+
+        g_strfreev(parts);
+
+        gtk_label_set_text(GTK_LABEL(ui->status), "Input saved.");
+
+        setup_bubble(ui);          // Array + Bubble Sort
+    }
+}
+
+static gboolean autoplay_tick(gpointer data) {
     ExplorerUI *ui = data;
 
     // Same comparison, metrics update, and redraw as a manual click.
@@ -366,23 +537,22 @@ static gboolean autoplay_tick(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-static void on_start_clicked(GtkButton *button, gpointer data)
-{
+static void on_start_clicked(GtkButton *button, gpointer data) {
     ExplorerUI *ui = data;
     if (ui->timer_id || !ui->run.advance || ui->run.done) return;
 
-    guint delay = (guint)gtk_range_get_value(GTK_RANGE(ui->speed));
+    guint delay = (guint) gtk_range_get_value(GTK_RANGE(ui->speed));
     ui->timer_id = g_timeout_add(delay, autoplay_tick, ui);
 }
 
-static void on_stop_clicked(GtkButton *button, gpointer data)
-{
+static void on_stop_clicked(GtkButton *button, gpointer data) {
     ExplorerUI *ui = data;
     g_clear_handle_id(&ui->timer_id, g_source_remove);
 }
 
-static void free_explorer(gpointer data)
-{
+// helper functions
+
+static void free_explorer(gpointer data) {
     ExplorerUI *ui = data;
     g_clear_handle_id(&ui->timer_id, g_source_remove);
     g_free(ui);
@@ -393,21 +563,21 @@ static void free_explorer(gpointer data)
 static void apply_style(GtkWidget *window) {
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
-        "window { background: #f0f0f0; color: #000000; }"
-        ".visualization { background: #ffffff; border-radius: 10px; }"
-        ".workspace { padding: 26px; } .controls { padding: 24px; background: #f0f0f0; }"
-        ".card { background: #ffffff; border-radius: 10px; padding: 16px; }"
-        ".dim-label { color: #0000ff; } .title-1 { font-size: 25px; font-weight: bold; }"
-        ".title-2 { font-size: 21px; font-weight: bold; }"
-        "button, entry, dropdown { border-radius: 7px; }"
-        "progressbar progress { background: #3ba6d4; }");
+                                      "window { background: #f0f0f0; color: #000000; }"
+                                      ".visualization { background: #ffffff; border-radius: 10px; }"
+                                      ".workspace { padding: 26px; } .controls { padding: 24px; background: #f0f0f0; }"
+                                      ".card { background: #ffffff; border-radius: 10px; padding: 16px; }"
+                                      ".dim-label { color: #0000ff; } .title-1 { font-size: 25px; font-weight: bold; }"
+                                      ".title-2 { font-size: 21px; font-weight: bold; }"
+                                      "button, entry, dropdown { border-radius: 7px; }"
+                                      "progressbar progress { background: #3ba6d4; }");
     gtk_style_context_add_provider_for_display(gtk_widget_get_display(window),
-        GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+                                               GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(css);
 }
 
 void activate(GtkApplication *app, gpointer data) {
-    (void)data;
+    (void) data;
     ExplorerUI *ui = g_new0(ExplorerUI, 1);
     GtkWidget *window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "Group 4 · Algorithm Explorer");
@@ -421,7 +591,7 @@ void activate(GtkApplication *app, gpointer data) {
     g_signal_connect(ui->apply, "clicked", G_CALLBACK(on_apply_clicked), ui);
     g_signal_connect(ui->step, "clicked", G_CALLBACK(on_step_clicked), ui);
     g_signal_connect(ui->start, "clicked", G_CALLBACK(on_start_clicked), ui);
-    g_signal_connect(ui->stop,  "clicked", G_CALLBACK(on_stop_clicked), ui);
+    g_signal_connect(ui->stop, "clicked", G_CALLBACK(on_stop_clicked), ui);
 
     gtk_widget_set_sensitive(ui->step, FALSE);
 
