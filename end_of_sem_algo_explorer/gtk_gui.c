@@ -268,6 +268,17 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state)
     }
 }
 
+void draw_insertion(cairo_t *cr, int width, int height, const void *state)
+{
+    const InsertionState *s = state;
+    BubbleState adapter = {
+        .values = s->values,
+        .count = s->count,
+        .compared = s->compared
+    };
+    draw_bubble(cr, width, height, &adapter);
+}
+
 static void on_apply_clicked(GtkButton *button, gpointer data)
 {
     ExplorerUI *ui = data;
@@ -300,16 +311,40 @@ static void on_apply_clicked(GtkButton *button, gpointer data)
     g_object_set_data_full(G_OBJECT(button), "values", values, g_free);
     g_clear_handle_id(&ui->timer_id, g_source_remove);
 
-    ui->bubble = (BubbleState){
-        .values = values, .count = count, .end = count - 1, .compared = -1
-    };
-    ui->run = (Step){
-        .state = &ui->bubble,
-        .advance = n_bubble_step,
-        .done = count < 2
-    };
+    guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
+
+    if (selected == 0) {
+        ui->bubble = (BubbleState){
+            .values = values, .count = count, .end = count - 1, .compared = -1
+        };
+        ui->run = (Step){
+            .state = &ui->bubble,
+            .advance = n_bubble_step,
+            .done = count < 2
+        };
+        ui->draw = draw_bubble;
+    } else if (selected == 1) {
+        ui->insertion = (InsertionState){
+            .values = values,
+            .count = count,
+            .compared = -1,
+            .i = count > 1 ? 1 : 0,
+            .j = count > 1 ? 0 : -1,
+            .saved = count > 1 ? values[1] : 0
+        };
+        ui->run = (Step){
+            .state = &ui->insertion,
+            .advance = n_insertion_step,
+            .done = count < 2
+        };
+        ui->draw = draw_insertion;
+    } else {
+        gtk_label_set_text(GTK_LABEL(ui->status),
+                           "This algorithm is not implemented yet.");
+        return;
+    }
+
     update_metrics(ui);
-    ui->draw = draw_bubble;
 
     gtk_label_set_text(GTK_LABEL(ui->status), "Data loaded.");
     gtk_widget_set_visible(ui->placeholder, FALSE);

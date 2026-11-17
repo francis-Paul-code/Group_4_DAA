@@ -41,6 +41,17 @@ void binary_search(GtkWidget *workspace );
 void insertion_sort(GtkWidget *workspace );
 void quick_sort(GtkWidget *workspace );
 
+// insertion sort
+typedef struct {
+    int *values;
+    int count;
+    int compared;  // Index compared on the left
+    int i;         // Next unsorted index
+    int j;         // Current index in sorted prefix
+    int saved;     // Value being inserted
+} InsertionState;
+void n_insertion_step(Step *run);
+
 // bubble sort
 typedef struct {
     int *values;

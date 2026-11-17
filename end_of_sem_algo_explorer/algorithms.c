@@ -2,6 +2,40 @@
 
 #include "algorithms.h"
 
+// insertion sort
+void n_insertion_step(Step *prev_step)
+{
+    if (prev_step->done) return;
+
+    InsertionState *s = prev_step->state;
+
+    if (s->i >= s->count) {
+        prev_step->done = true;
+        s->compared = -1;
+        return;
+    }
+
+    s->compared = s->j;
+    count_step(prev_step, s->j >= 0 ? 1 : 0);
+
+    if (s->j >= 0 && s->values[s->j] > s->saved) {
+        s->values[s->j + 1] = s->values[s->j];
+        s->j--;
+        return;
+    }
+
+    s->values[s->j + 1] = s->saved;
+    s->i++;
+
+    if (s->i < s->count) {
+        s->saved = s->values[s->i];
+        s->j = s->i - 1;
+    } else {
+        prev_step->done = true;
+        s->compared = -1;
+    }
+}
+
 // bubble soert
 
 void n_bubble_step(Step *prev_step)

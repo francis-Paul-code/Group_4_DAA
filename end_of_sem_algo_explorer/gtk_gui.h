@@ -13,6 +13,7 @@ typedef struct {
     guint timer_id;
     Step run;                              // Active algorithm and its state
     BubbleState bubble;
+    InsertionState insertion;
     DrawAlgorithm draw;
 } ExplorerUI;
 
