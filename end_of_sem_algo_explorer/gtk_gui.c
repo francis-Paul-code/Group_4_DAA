@@ -189,7 +189,7 @@ static GtkWidget *panel(ExplorerUI *ui) {
 void draw_stack(cairo_t *cr, int width, int height, const void *data)
 {
     const Stack *stack = data;
-    const List *list = stack->base;
+    List *list = stack->base;
 
 
     if (!list || list->size == 0)
@@ -292,7 +292,6 @@ void draw_bubble(cairo_t *cr, int width, int height, const void *state) {
     }
 }
 
-<<<<<<< HEAD
 void draw_insertion(cairo_t *cr, int width, int height, const void *state)
 {
     const InsertionState *s = state;
@@ -304,25 +303,25 @@ void draw_insertion(cairo_t *cr, int width, int height, const void *state)
     draw_bubble(cr, width, height, &adapter);
 }
 
-static void on_apply_clicked(GtkButton *button, gpointer data)
-{
-    ExplorerUI *ui = data;
-    const char *text = gtk_editable_get_text(GTK_EDITABLE(ui->input));
-=======
 static void setup_bubble(ExplorerUI *ui) {
-    List * input = ui->input_data;
+    List *input = ui->input_data;
     if (!ui->input_data || input->size == 0)
         return;
->>>>>>> 1815cf2b24fce62bc300f9045caff88973387ae8
 
     g_clear_handle_id(&ui->timer_id, g_source_remove);
 
-<<<<<<< HEAD
-    guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
+    int count = input->size;
+    int *values = g_new(int, count);
+    for (int i = 0; i < count; i++)
+        values[i] = *(int *)get(input, i);
 
+    guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui->algorithm));
     if (selected == 0) {
         ui->bubble = (BubbleState){
-            .values = values, .count = count, .end = count - 1, .compared = -1
+            .values = values,
+            .count = count,
+            .end = count - 1,
+            .compared = -1
         };
         ui->run = (Step){
             .state = &ui->bubble,
@@ -330,6 +329,7 @@ static void setup_bubble(ExplorerUI *ui) {
             .done = count < 2
         };
         ui->draw = draw_bubble;
+        ui->draw_data = &ui->bubble;
     } else if (selected == 1) {
         ui->insertion = (InsertionState){
             .values = values,
@@ -345,39 +345,15 @@ static void setup_bubble(ExplorerUI *ui) {
             .done = count < 2
         };
         ui->draw = draw_insertion;
+        ui->draw_data = &ui->insertion;
     } else {
+        g_free(values);
         gtk_label_set_text(GTK_LABEL(ui->status),
                            "This algorithm is not implemented yet.");
         return;
     }
 
-    update_metrics(ui);
-=======
-    int count = input->size;
-    int *values = g_new(int, count);
-
-    for (int i = 0; i < count; i++)
-        values[i] = *(int *) get(ui->input_data, i);
-
-    g_object_set_data_full(G_OBJECT(ui->canvas),
-                           "bubble-values", values, g_free);
-
-    ui->bubble = (BubbleState){
-        .values = values,
-        .count = count,
-        .end = count - 1,
-        .compared = -1
-    };
-
-    ui->run = (Step){
-        .state = &ui->bubble,
-        .advance = n_bubble_step,
-        .done = count < 2
-    };
->>>>>>> 1815cf2b24fce62bc300f9045caff88973387ae8
-
-    ui->draw = draw_bubble;
-    ui->draw_data = &ui->bubble;
+    g_object_set_data_full(G_OBJECT(ui->canvas), "sort-values", values, g_free);
 
     update_metrics(ui);
 
@@ -387,8 +363,6 @@ static void setup_bubble(ExplorerUI *ui) {
     gtk_widget_set_visible(ui->placeholder, FALSE);
     gtk_widget_queue_draw(ui->canvas);
 }
-
-
 
 GtkWidget *explorer_screen(ExplorerUI *ui) {
     GtkWidget *split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
