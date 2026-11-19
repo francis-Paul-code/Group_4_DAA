@@ -16,6 +16,7 @@ typedef struct {
     Step run;                              // Active algorithm and its state
     BubbleState bubble;
     InsertionState insertion;
+    SelectionState selection;
     DrawAlgorithm draw;
     const void *draw_data;
 } ExplorerUI;
