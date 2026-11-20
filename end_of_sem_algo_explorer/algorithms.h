@@ -67,6 +67,17 @@ void bubble_sort(GtkWidget *workspace );
 void merge_sort(GtkWidget *workspace );
 void selection_sort(GtkWidget *workspace );
 
+// selection sort
+typedef struct {
+    int *values;
+    int count;
+    int compared;  // Index compared with the current minimum (-1 if none)
+    int i;         // First unsorted index; everything left of it is sorted
+    int j;         // Next index to compare with the current minimum
+    int min;       // Index of the smallest value found so far in this pass
+} SelectionState;
+void n_selection_step(Step *run);
+
 
 // graphs algorithms
 void shortest_path(GtkWidget *workspace );

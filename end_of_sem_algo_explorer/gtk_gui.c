@@ -13,6 +13,9 @@ const char *const algorithm_info[] = {
     "Finds shortest paths from a starting vertex in a graph with nonnegative edge weights.\n"
     "Time: O((V + E) log V) with an adjacency list and a binary heap.",
 
+    "Finds the smallest unsorted value and swaps it to the front, one pass at a time.\n"
+    "Time: O(n²) in every case. Extra space: O(1).",
+
 };
 
 // ---------------- Components ----------------
@@ -168,7 +171,7 @@ static GtkWidget *panel(ExplorerUI *ui) {
     append(component, label("EXPERIMENT SETUP", "dim-label"));
     append(component, label("Algorithm explorer", "title-2"));
     const char *structures[] = {"Array", "List", "Stack", "Queue", "Graph", "Tree", NULL};
-    const char *algorithms[] = {"Bubble Sort", "Insertion Sort", "Quick Sort", "Djikstra's Algorithm", NULL};
+    const char *algorithms[] = {"Bubble Sort", "Insertion Sort", "Quick Sort", "Djikstra's Algorithm", "Selection Sort", NULL};
     append(component, selector("Data structure", structures, &ui->structure));
     append(component, selector("Algorithm", algorithms, &ui->algorithm));
 
@@ -303,6 +306,61 @@ void draw_insertion(cairo_t *cr, int width, int height, const void *state)
     draw_bubble(cr, width, height, &adapter);
 }
 
+// Selection Sort
+// Grey bars are already sorted, the green bar is the smallest value found so far
+// in this pass, and the outlined bar is the value being compared with it.
+void draw_selection(cairo_t *cr, int width, int height, const void *state)
+{
+    const SelectionState *s = state;
+    if (s->count == 0 || width <= 24 || height <= 40) return;
+
+    double min = 0, max = 0;
+    for (int i = 0; i < s->count; i++) {
+        min = MIN(min, s->values[i]);
+        max = MAX(max, s->values[i]);
+    }
+
+    double chart_height = height - 40.0;
+    double scale = (max > min) ? chart_height / (max - min) : 0;
+    double baseline = 12 + max * scale;
+    double slot = (width - 24.0) / s->count;
+
+    cairo_set_font_size(cr, 14);
+
+    for (int i = 0; i < s->count; i++) {
+        double center = 12 + (i + 0.5) * slot;
+        double tip = baseline - s->values[i] * scale;
+        double bar_width = slot * 0.7;
+
+        if (i < s->i)
+            cairo_set_source_rgb(cr, 0.60, 0.60, 0.60);  // Sorted
+        else if (i == s->min)
+            cairo_set_source_rgb(cr, 0.20, 0.65, 0.30);  // Current minimum
+        else
+            cairo_set_source_rgb(cr, 0.20, 0.55, 0.85);  // Unsorted
+
+        cairo_rectangle(cr, center - bar_width / 2, MIN(tip, baseline),
+                        bar_width, MAX(tip, baseline) - MIN(tip, baseline));
+        if (i == s->compared) {
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.75, 0.25, 0.05);
+            cairo_set_line_width(cr, 3);
+            cairo_stroke(cr);
+        } else {
+            cairo_fill(cr);
+        }
+
+        char text[16];
+        g_snprintf(text, sizeof text, "%d", s->values[i]);
+
+        cairo_text_extents_t ext;
+        cairo_text_extents(cr, text, &ext);
+        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        cairo_move_to(cr, center - ext.width / 2 - ext.x_bearing, height - 8);
+        cairo_show_text(cr, text);
+    }
+}
+
 static void setup_bubble(ExplorerUI *ui) {
     List *input = ui->input_data;
     if (!ui->input_data || input->size == 0)
@@ -346,6 +404,22 @@ static void setup_bubble(ExplorerUI *ui) {
         };
         ui->draw = draw_insertion;
         ui->draw_data = &ui->insertion;
+    } else if (selected == 4) {
+        ui->selection = (SelectionState){
+            .values = values,
+            .count = count,
+            .compared = -1,
+            .i = 0,
+            .j = 1,
+            .min = 0
+        };
+        ui->run = (Step){
+            .state = &ui->selection,
+            .advance = n_selection_step,
+            .done = count < 2
+        };
+        ui->draw = draw_selection;
+        ui->draw_data = &ui->selection;
     } else {
         g_free(values);
         gtk_label_set_text(GTK_LABEL(ui->status),

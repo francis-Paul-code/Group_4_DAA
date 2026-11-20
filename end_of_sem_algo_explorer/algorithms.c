@@ -60,6 +60,41 @@ void n_bubble_step(Step *prev_step)
     }
 }
 
+// selection sort
+// Each step compares one value with the smallest value found so far.
+// At the end of a pass, the smallest value is swapped into position i.
+void n_selection_step(Step *prev_step)
+{
+    if (prev_step->done) return;
+
+    SelectionState *s = prev_step->state;
+    s->compared = s->j;
+
+    count_step(prev_step, 1);
+
+    if (s->values[s->j] < s->values[s->min])
+        s->min = s->j;
+
+    if (++s->j == s->count) {
+        // Pass finished: move the smallest value to the front of the unsorted part.
+        if (s->min != s->i) {
+            int temp = s->values[s->i];
+            s->values[s->i] = s->values[s->min];
+            s->values[s->min] = temp;
+        }
+
+        s->i++;
+        s->min = s->i;
+        s->j = s->i + 1;
+
+        if (s->i >= s->count - 1) {
+            prev_step->done = true;
+            s->i = s->count;   // Every value is now sorted.
+            s->compared = -1;
+        }
+    }
+}
+
 // fibonacci
 void n_fib_step(Step *prev_step) {
 
